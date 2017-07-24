@@ -70,7 +70,8 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     func configureDatabase() {
-        // TODO: configure database to sync messages
+        // configure database to sync messages
+        ref = Database.database().reference()
     }
     
     func configureStorage() {
@@ -109,7 +110,8 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
             backgroundBlur.effect = nil
             messageTextField.delegate = self
             
-            // TODO: Set up app to send and receive messages when signed in
+            // Set up app to send and receive messages when signed in
+            configureDatabase()
         }
     }
     
