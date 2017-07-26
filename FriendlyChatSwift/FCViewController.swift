@@ -17,6 +17,7 @@
 import UIKit
 import Firebase
 import FirebaseAuthUI
+import FirebaseGoogleAuthUI
 
 // MARK: - FCViewController
 
@@ -65,6 +66,10 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     // MARK: Config
     
     func configureAuth() {
+        
+        let provider: [FUIAuthProvider] = [FUIGoogleAuth()]
+        FUIAuth.defaultAuthUI()?.providers = provider
+        
         // configure firebase authentication
         _authHandle = Auth.auth().addStateDidChangeListener() { (auth: Auth, user: User?) in
         
@@ -97,7 +102,8 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     func configureStorage() {
-        // TODO: configure storage using your firebase storage
+        // configure storage using your firebase storage
+        storageRef = Storage.storage().reference()
     }
     
     deinit {
@@ -136,6 +142,7 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
             
             // Set up app to send and receive messages when signed in
             configureDatabase()
+            configureStorage()
         }
     }
     
@@ -154,7 +161,20 @@ class FCViewController: UIViewController, UINavigationControllerDelegate {
     }
     
     func sendPhotoMessage(photoData: Data) {
-        // TODO: create method that pushes message w/ photo to the firebase database
+        // create method that pushes message w/ photo to the firebase database
+        let imagePath = "chat_photos/" + Auth.auth().currentUser!.uid + "/\(Double(Date.timeIntervalSinceReferenceDate * 1000)).jpg"
+        
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+        storageRef.child(imagePath).putData(photoData, metadata: metadata) { metadata, error in
+            
+            if let error = error {
+                print("error uploading: \(error)")
+                return
+            }
+            
+            self.sendMessage(data: [Constants.MessageFields.imageUrl: self.storageRef.child((metadata?.path)!).description])
+        }
     }
     
     // MARK: Alert
@@ -235,10 +255,38 @@ extension FCViewController: UITableViewDelegate, UITableViewDataSource {
         let messageSnapshot: DataSnapshot = messages[indexPath.row]
         let message = messageSnapshot.value as! [String:String]
         let name = message[Constants.MessageFields.name] ?? "[username]"
-        let text = message[Constants.MessageFields.text] ?? "[message]"
         
-        cell.textLabel?.text = name + " : " + text
-        cell.imageView?.image = placeholderImage
+        // if image message, then grab image and display it
+        if let imageUrl = message[Constants.MessageFields.imageUrl] {
+            cell!.textLabel?.text = "sent by: \(name)"
+            // image already exists in cache
+            if let cachedImage = imageCache.object(forKey: imageUrl as NSString) {
+                cell.imageView?.image = cachedImage
+                cell.setNeedsLayout()
+            } else {
+                // download image
+                Storage.storage().reference(forURL: imageUrl).getData(maxSize: INT64_MAX, completion: { (data, error) in
+                    guard error == nil else {
+                        print("Error downloading: \(error!)")
+                        return
+                    }
+                    let messageImage = UIImage.init(data: data!, scale: 50)
+                    self.imageCache.setObject(messageImage!, forKey: imageUrl as NSString as NSString)
+                    // check if the cell is still on screen, if so, update cell image
+                    if cell == tableView.cellForRow(at: indexPath) {
+                        DispatchQueue.main.async {
+                            cell.imageView?.image = messageImage
+                            cell.setNeedsLayout()
+                        }
+                    }
+                })
+            }
+        } else {
+            // otherwise, update cell for regular message
+            let text = message[Constants.MessageFields.text] ?? "[message]"
+            cell!.textLabel?.text = name + ": " + text
+            cell!.imageView?.image = placeholderImage
+        }
         
         return cell!
     }
